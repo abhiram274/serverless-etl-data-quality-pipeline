@@ -1,0 +1,90 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Phase 5: CloudWatch Metrics, Alarms, and SNS Incident Notification Topic for Serverless ETL Pipeline",
+  "Parameters": {
+    "AlertEmail": {
+      "Type": "String",
+      "Default": "data-engineering-alerts@example.com",
+      "Description": "Email address for operational pipeline alerts"
+    },
+    "RejectionThresholdCount": {
+      "Type": "Number",
+      "Default": 200,
+      "Description": "Threshold of quarantined records triggering high rejection alarm"
+    }
+  },
+  "Resources": {
+    "PipelineAlertsSNSTopic": {
+      "Type": "AWS::SNS::Topic",
+      "Properties": {
+        "TopicName": "RetailETLAlertsTopic",
+        "DisplayName": "Retail Serverless ETL & Quality Pipeline Alerts"
+      }
+    },
+    "EmailNotificationSubscription": {
+      "Type": "AWS::SNS::Subscription",
+      "Properties": {
+        "TopicArn": { "Ref": "PipelineAlertsSNSTopic" },
+        "Protocol": "email",
+        "Endpoint": { "Ref": "AlertEmail" }
+      }
+    },
+    "LambdaExecutionErrorsAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": "RetailETL-Lambda-ExecutionErrors",
+        "AlarmDescription": "Triggers when the ETL Lambda function reports 1 or more errors",
+        "Namespace": "AWS/Lambda",
+        "MetricName": "Errors",
+        "Dimensions": [
+          { "Name": "FunctionName", "Value": "RetailServerlessETLFunction" }
+        ],
+        "Statistic": "Sum",
+        "Period": 60,
+        "EvaluationPeriods": 1,
+        "Threshold": 1,
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "AlarmActions": [{ "Ref": "PipelineAlertsSNSTopic" }]
+      }
+    },
+    "LambdaDurationAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": "RetailETL-Lambda-DurationBreach",
+        "AlarmDescription": "Triggers when Lambda duration exceeds 60 seconds",
+        "Namespace": "AWS/Lambda",
+        "MetricName": "Duration",
+        "Dimensions": [
+          { "Name": "FunctionName", "Value": "RetailServerlessETLFunction" }
+        ],
+        "Statistic": "Maximum",
+        "Period": 60,
+        "EvaluationPeriods": 1,
+        "Threshold": 60000,
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "AlarmActions": [{ "Ref": "PipelineAlertsSNSTopic" }]
+      }
+    },
+    "HighDataQualityRejectionAlarm": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": "RetailETL-HighDataQualityRejectionCount",
+        "AlarmDescription": "Triggers when quarantined rejected records exceed threshold",
+        "Namespace": "RetailServerlessETL",
+        "MetricName": "RejectedQuarantinedRecords",
+        "Statistic": "Sum",
+        "Period": 300,
+        "EvaluationPeriods": 1,
+        "Threshold": { "Ref": "RejectionThresholdCount" },
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "AlarmActions": [{ "Ref": "PipelineAlertsSNSTopic" }]
+      }
+    }
+  },
+  "Outputs": {
+    "SNSTopicArn": {
+      "Description": "ARN of the SNS topic for pipeline alerts",
+      "Value": { "Ref": "PipelineAlertsSNSTopic" }
+    }
+  }
+}

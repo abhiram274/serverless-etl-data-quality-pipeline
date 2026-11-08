@@ -169,13 +169,12 @@ def lambda_handler(event: Dict[str, Any], context: Any = None) -> Dict[str, Any]
     # Local S3 manager import
     from src.s3_client import S3DataLakeManager
 
-    s3_manager = S3DataLakeManager()
-
     results = []
     for record in event.get("Records", []):
         # Extract bucket and key from S3 Event Notification format
         s3_info = record.get("s3", {})
-        bucket_name = s3_info.get("bucket", {}).get("name") or s3_manager.bucket_name
+        bucket_name = s3_info.get("bucket", {}).get("name") or os.getenv("S3_BUCKET_NAME", "retail-serverless-data-lake")
+        s3_manager = S3DataLakeManager(bucket_name=bucket_name)
         s3_key = s3_info.get("object", {}).get("key", "")
 
         log_structured(
