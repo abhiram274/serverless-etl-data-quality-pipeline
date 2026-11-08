@@ -1,0 +1,32 @@
+{
+  "report_type": "DataQualityExecutionReport",
+  "dataset_name": "retail_transactions_raw",
+  "batch_id": "phase3_batch_001",
+  "data_checksum": "b65af2ae935dbb509821b667b2cf4ebff53a20810052e177d136a20723d68dda",
+  "execution_timestamp_utc": "2026-11-08T06:37:08.357645+00:00",
+  "record_counts": {
+    "total_input_records": 10200,
+    "valid_curated_records": 9450,
+    "invalid_quarantined_records": 750,
+    "quality_pass_rate_pct": 92.65
+  },
+  "validation_failures_by_rule": {
+    "duplicate_records": 150,
+    "missing_required_fields": 300,
+    "invalid_or_negative_amounts": 220,
+    "malformed_or_invalid_dates": 180
+  },
+  "rejection_reason_details": {
+    "missing_customer_id": 100,
+    "missing_payment_method": 100,
+    "invalid_quantity": 100,
+    "invalid_unit_price": 40,
+    "invalid_total_amount": 80,
+    "malformed_dates": 180,
+    "duplicate_order_ids": 150
+  },
+  "schema_integrity": {
+    "quarantine_preserved_all_columns": true,
+    "idempotent_hash": "b65af2ae935dbb509821b667b2cf4ebff53a20810052e177d136a20723d68dda"
+  }
+}
