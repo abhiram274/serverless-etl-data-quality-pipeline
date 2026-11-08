@@ -1,12 +1,12 @@
-# Comprehensive Runbook & Operations Guide (Phases 1, 2, and 3)
+# Comprehensive Runbook: Phases 1, 2, 3, and 4
 
-This operational guide details environment setup, AWS infrastructure configuration (S3, Lambda, RDS PostgreSQL), networking, security groups, IAM authentication, and verification testing on Windows.
+This operations manual details environment setup on Windows, AWS services configuration (S3, Lambda, RDS PostgreSQL, Glue Data Catalog, Athena), and running the Streamlit dashboard.
 
 ---
 
 ## 1. Local Environment Setup (Windows)
 
-### Step 1.1: Virtual Environment Setup
+### Step 1.1: Activate Virtual Environment
 Open Windows PowerShell:
 ```powershell
 cd C:\Users\DELL\Downloads\serverless-etl-data-quality-pipeline
@@ -14,130 +14,80 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 ```
 
-### Step 1.2: Install Pinned Dependencies
+### Step 1.2: Install Full Project Dependencies
 ```powershell
 pip install -r requirements.txt
 ```
-*(Dependencies: `pandas`, `numpy`, `python-dotenv`, `pytest`, `boto3`, `botocore`, `psycopg[binary]`)*.
+*(Packages: `pandas`, `numpy`, `python-dotenv`, `pytest`, `boto3`, `botocore`, `psycopg[binary]`, `streamlit`, `plotly`, `pyarrow`)*.
 
-### Step 1.3: Configure Environment Variables
+### Step 1.3: Environment Configuration
+Copy `.env.example` to `.env`:
 ```powershell
 Copy-Item .env.example .env
 ```
-Update `.env` with your deployment values:
-- For offline local testing: Leave `USE_SQLITE_FALLBACK=true` (zero network dependency).
-- For live AWS RDS deployment: Populate `RDS_HOST`, `RDS_PORT`, `RDS_DB_NAME`, `RDS_USERNAME`, and `RDS_PASSWORD`.
+Ensure configuration matches your targets:
+- `USE_SQLITE_FALLBACK=true` allows running all tests and dashboard locally with zero external network dependencies.
+- Set `USE_SQLITE_FALLBACK=false` with your `RDS_HOST` and credentials to query live Amazon RDS PostgreSQL.
 
 ---
 
-## 2. Amazon RDS PostgreSQL Infrastructure Configuration
+## 2. AWS Glue Data Catalog & Amazon Athena Configuration
 
-### Step 2.1: VPC & Subnet Networking Design
-For enterprise data warehouse workloads:
-1. **VPC**: Deploy in a multi-AZ VPC across at least 2 Availability Zones (e.g. `us-east-1a`, `us-east-1b`).
-2. **Subnet Group**:
-   - Create a **DB Subnet Group** (`retail-dw-subnet-group`).
-   - Associate private subnets (`10.0.10.0/24`, `10.0.11.0/24`).
-   - Keep RDS database private (Set **Publicly Accessible**: `No`).
-
-### Step 2.2: Security Group Configuration
-Create two security groups:
-1. **Lambda Security Group** (`sg-retail-lambda`):
-   - **Outbound**: Allow all outbound traffic (`0.0.0.0/0`) or port `5432` to the DB security group.
-2. **RDS Security Group** (`sg-retail-rds-db`):
-   - **Inbound**: Port `5432` from Source: `sg-retail-lambda` (Security Group reference, never `0.0.0.0/0`).
-   - **Outbound**: None.
-
-### Step 2.3: RDS Instance Provisioning
-1. Open **Amazon RDS Console** -> **Create database**.
-2. **Engine**: PostgreSQL (Version 14+ or 16+).
-3. **Template**: Free tier (for development) or Production Multi-AZ.
-4. **DB Instance Identifier**: `retail-dw-postgres`.
-5. **Master Credentials**:
-   - Master username: `dw_admin`
-   - Store password securely in **AWS Secrets Manager** (e.g. `retail/rds/credentials`).
-6. **Connectivity**:
-   - VPC: Select your custom VPC.
-   - Subnet Group: `retail-dw-subnet-group`.
-   - Public access: **No**.
-   - VPC Security Group: `sg-retail-rds-db`.
-7. **Database Options**:
-   - Initial database name: `retail_warehouse`.
-   - Port: `5432`.
-   - Storage Encryption: **Enable encryption** using AWS KMS (`aws/rds`).
-
-### Step 2.4: Secure Credential Management via AWS Secrets Manager
-In production Lambda execution:
-1. Store DB credentials in AWS Secrets Manager as JSON:
-   ```json
-   {
-     "username": "dw_admin",
-     "password": "YOUR_STRONG_PASSWORD",
-     "host": "retail-dw-postgres.c9xxxx.us-east-1.rds.amazonaws.com",
-     "port": 5432,
-     "dbname": "retail_warehouse"
-   }
-   ```
-2. Grant Lambda's IAM execution role `secretsmanager:GetSecretValue` on the secret ARN.
-3. Retrieve credentials in Lambda initialization using `boto3.client('secretsmanager')` rather than hardcoding in environment variables.
-
----
-
-## 3. Data Warehouse Star Schema Architecture
-
-SQL script: [`sql/schema.sql`](file:///c:/Users/DELL/Downloads/serverless-etl-data-quality-pipeline/sql/schema.sql)
-
+### Step 2.1: S3 Warehouse Prefix Layout
+The S3 data lake organizes analytical data into Hive-partitioned directory paths:
 ```text
-                  ┌──────────────────────┐
-                  │     dim_customer     │
-                  ├──────────────────────┤
-                  │ PK  customer_key     │
-                  │ UK  customer_id      │
-                  │     region           │
-                  └──────────┬───────────┘
-                             │ 1
-                             │
-                             │ N
-┌──────────────────────┐  ┌──┴───────────────────┐  ┌──────────────────────┐
-│     dim_product      │  │     fact_orders      │  │       dim_date       │
-├──────────────────────┤  ├──────────────────────┤  ├──────────────────────┤
-│ PK  product_key      ├──┤ PK  order_key        ├──┤ PK  date_key         │
-│ UK  product_id       │1N│ UK  order_id         │N1│ UK  full_date        │
-│     product_name     │  │ FK  customer_key     │  │     year / quarter   │
-│     category         │  │ FK  product_key      │  │     month / day      │
-│     unit_price       │  │ FK  date_key         │  │     is_weekend       │
-└──────────────────────┘  │     order_timestamp  │  └──────────────────────┘
-                          │     quantity         │
-                          │     unit_price       │
-                          │     total_amount     │
-                          │     payment_method   │
-                          │     order_status     │
-                          │     batch_id         │
-                          └──────────────────────┘
+s3://YOUR_DATALAKE_BUCKET/warehouse/fact_orders/year=YYYY/month=MM/*.parquet
 ```
 
-### Key Engineering Guarantees
-1. **Referential Integrity**: Surrogate primary keys (`customer_key`, `product_key`, `date_key`) enforced by Foreign Key constraints.
-2. **Idempotent Upsert Logic**: `ON CONFLICT (order_id) DO UPDATE` ensures re-running pipeline batches never creates duplicate rows or violates uniqueness.
-3. **Audit Trail**: Every record tracks `batch_id`, `inserted_at`, and `updated_at`.
+### Step 2.2: Glue Data Catalog Setup
+1. Open **AWS Glue Console** -> **Databases** -> **Add database**.
+   - Name: `retail_analytics_db`
+   - Location: `s3://YOUR_DATALAKE_BUCKET/warehouse/`
+2. **Option A: Automated Glue Crawler**:
+   - Create crawler `retail-warehouse-crawler` targeting `s3://YOUR_DATALAKE_BUCKET/warehouse/`.
+   - Output database: `retail_analytics_db`.
+   - Run crawler to auto-discover partitions (`year`, `month`).
+3. **Option B: Athena DDL Execution**:
+   - Open **Amazon Athena Query Editor**.
+   - Run DDL script: [`sql/athena_ddl.sql`](file:///c:/Users/DELL/Downloads/serverless-etl-data-quality-pipeline/sql/athena_ddl.sql).
+   - Discover partitions: `MSCK REPAIR TABLE retail_analytics_db.fact_orders;`.
+
+### Step 2.3: Running Athena Analytical Queries
+Execute analytical SQL queries defined in [`sql/athena_analytical_queries.sql`](file:///c:/Users/DELL/Downloads/serverless-etl-data-quality-pipeline/sql/athena_analytical_queries.sql):
+- **Query 1**: Total and monthly revenue aggregations.
+- **Query 2**: Top 10 products by revenue and units sold.
+- **Query 3**: Regional sales performance and market share percentages.
+- **Query 4**: Order cancellation rate and regional fulfillment analysis.
+- **Query 5**: Customer lifetime spend cohorts and purchasing velocity.
 
 ---
 
-## 4. Execution & Testing Instructions
+## 3. Interactive Streamlit Dashboard
 
-### Run Complete Test Suite (13 Automated Tests)
-Runs Phase 1, Phase 2, and Phase 3 unit & integration tests:
+The dashboard ([`app.py`](file:///c:/Users/DELL/Downloads/serverless-etl-data-quality-pipeline/app.py)) connects directly to the curated warehouse database and historical JSON quality audit reports.
+
+### Features
+1. **Executive Overview**: Headline KPIs (Total Revenue, Orders, Unique Customers, Cancellation Rate, Average Order Value).
+2. **Revenue Analytics**: Interactive monthly revenue trend line charts and completed order bars with CSV export.
+3. **Product & Category Analytics**: Horizontal bar chart of Top 10 revenue-generating products and category doughnut distribution.
+4. **Regional Analytics**: Territorial revenue distribution and order volumes.
+5. **Data Quality Health**: Live inspection of latest batch health (Pass rate %, Quarantined counts, Rejection root-cause bars, historical JSON audit logs).
+
+### Launching the Dashboard
+From your PowerShell terminal:
+```powershell
+streamlit run app.py
+```
+Access the dashboard in your web browser at: `http://localhost:8501`.
+
+---
+
+## 4. Full Automated Test Suite Execution
+
+All 18 automated tests verify Phase 1 (Data generation & controlled anomalies), Phase 2 (S3 event triggers & anti-recursion), Phase 3 (Modular DQ engine & star schema loader), and Phase 4 (Analytics service & KPIs).
+
+Run from PowerShell:
 ```powershell
 python -m unittest discover -s tests -p "test_*.py" -v
 ```
-
-### Run Phase 3 Pipeline (Quality Engine -> S3 -> Warehouse Load)
-```powershell
-python src/phase3_pipeline.py
-```
-
-### Inspect Output Artifacts
-- **Curated Dataset**: `data/clean/` or S3 `curated/`
-- **Quarantined Anomalies**: S3 `quarantine/`
-- **Quality Audit Report**: [`reports/quality_audit_phase3_batch_001.json`](file:///c:/Users/DELL/Downloads/serverless-etl-data-quality-pipeline/reports/quality_audit_phase3_batch_001.json)
-- **Warehouse DB**: `data/warehouse.db` or PostgreSQL `fact_orders` table
+*(All 18/18 tests pass in ~1 second)*.

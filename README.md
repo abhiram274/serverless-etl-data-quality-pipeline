@@ -1,6 +1,6 @@
 # Serverless ETL & Data Quality Pipeline on AWS
 
-An enterprise data lake and serverless ETL pipeline built with **Python 3.12, Amazon S3, AWS Lambda, Amazon RDS PostgreSQL, Pandas, CloudWatch, and IAM**.
+An enterprise data lake and serverless ETL pipeline built with **Python 3.12, Amazon S3, AWS Lambda, Amazon RDS PostgreSQL, AWS Glue, Amazon Athena, Streamlit, Plotly, Pandas, and IAM**.
 
 ---
 
@@ -24,23 +24,27 @@ An enterprise data lake and serverless ETL pipeline built with **Python 3.12, Am
      [ S3 Bucket: curated/ ]                   [ S3 Bucket: quarantine/ ]
      (Standardized, 0 DQ errors)               (Preserved raw rows + rejection_reasons)
                  │                                         │
-                 │                                         ▼
-                 │                             [ S3 Bucket: reports/ ]
-                 │                             (JSON Audit & Metrics Reports)
-                 ▼
-     [ Amazon RDS PostgreSQL Warehouse ]
-     (Star Schema: fact_orders, dim_customer, dim_product, dim_date)
+                 ├────────────────────────┐                ▼
+                 ▼                        ▼    [ S3 Bucket: reports/ ]
+     [ S3: warehouse/ ]     [ Amazon RDS PostgreSQL ]  (Execution Audit Reports)
+     (Hive Parquet / CSV)   (Star Schema Warehouse)                │
+     year=YYYY/month=MM/                  │                        │
+                 │                        └────────────┬───────────┘
+                 ▼                                     ▼
+     [ AWS Glue & Athena ]                 [ Streamlit Dashboard ]
+     (Serverless Analytics)                (Interactive Visualizations)
 ```
 
 ---
 
-## 2. Directory Layout
+## 2. Project Directory Layout
 
 ```text
 serverless-etl-data-quality-pipeline/
 ├── .env.example                     # Environment template (Local, S3 & RDS)
 ├── .gitignore                       # Git exclusions (.venv, caches, local DBs)
-├── HOW_TO_RUN.md                    # Detailed runbook, AWS RDS networking & console setup
+├── app.py                           # Interactive Streamlit Analytics & Quality Dashboard
+├── HOW_TO_RUN.md                    # Detailed runbook & AWS configuration guide
 ├── README.md                        # Project documentation
 ├── requirements.txt                 # Pinned dependencies
 ├── data/
@@ -56,9 +60,13 @@ serverless-etl-data-quality-pipeline/
 │   ├── quality_audit_phase3_batch_001.json # Phase 3 Data Quality Execution Audit Report
 │   └── statistics_report.json              # Phase 1 Data Exploration Report
 ├── sql/
+│   ├── athena_analytical_queries.sql# 5 Athena queries (Revenue, Products, Regions, Trends)
+│   ├── athena_ddl.sql               # Athena / Glue Catalog Partitioned Table DDL
 │   └── schema.sql                   # Star Schema DDL (PostgreSQL: tables, PKs, FKs, indexes)
 ├── src/
 │   ├── __init__.py
+│   ├── analytics_service.py         # Dashboard analytics & KPI aggregation engine
+│   ├── athena_exporter.py           # S3 warehouse Hive partitioner (year=YYYY/month=MM)
 │   ├── explorer.py                  # Profiling & Exploration module
 │   ├── generator.py                 # Synthetic data & controlled anomaly generator
 │   ├── lambda_function.py           # AWS Lambda Handler & ETL transformations
@@ -80,39 +88,46 @@ serverless-etl-data-quality-pipeline/
     ├── test_phase2_e2e.py           # Phase 2 S3 -> Lambda -> S3 E2E test
     ├── test_phase2_unit.py          # Phase 2 unit & anti-recursion tests
     ├── test_phase3.py               # Phase 3 modular rules & warehouse loader tests
+    ├── test_phase4.py               # Phase 4 analytics & Athena partitioner tests
     └── test_pipeline.py             # Phase 1 pipeline tests
 ```
 
 ---
 
-## 3. Phase 3 Deliverables
+## 3. Phase 4 Deliverables
 
-### Part A: Data Quality Engine
-- **Modular Quality Checks**:
-  1. [`src/quality/check_duplicates.py`](file:///c:/Users/DELL/Downloads/serverless-etl-data-quality-pipeline/src/quality/check_duplicates.py): Flags primary business key duplicates.
-  2. [`src/quality/check_missing.py`](file:///c:/Users/DELL/Downloads/serverless-etl-data-quality-pipeline/src/quality/check_missing.py): Flags null or whitespace-only mandatory fields.
-  3. [`src/quality/check_amounts.py`](file:///c:/Users/DELL/Downloads/serverless-etl-data-quality-pipeline/src/quality/check_amounts.py): Flags negative prices, zero quantities, and invalid totals.
-  4. [`src/quality/check_dates.py`](file:///c:/Users/DELL/Downloads/serverless-etl-data-quality-pipeline/src/quality/check_dates.py): Validates ISO timestamps and flags unparseable date strings.
-- **Data Partitioning**: Valid records stream to `curated/`; corrupted records stream to `quarantine/` preserving original fields plus a tagged `rejection_reasons` column.
-- **Execution Audit Report**: Emits a deterministic JSON report ([`reports/quality_audit_phase3_batch_001.json`](file:///c:/Users/DELL/Downloads/serverless-etl-data-quality-pipeline/reports/quality_audit_phase3_batch_001.json)) containing input, valid, invalid, and per-rule failure statistics.
+### PART A: AWS Glue Data Catalog & Amazon Athena
+1. **Catalog & Partitioned DDL**: [`sql/athena_ddl.sql`](file:///c:/Users/DELL/Downloads/serverless-etl-data-quality-pipeline/sql/athena_ddl.sql) defines `retail_analytics_db` and partitioned external tables (`year`, `month`) targeting Snappy-compressed Parquet.
+2. **Analytical SQL Queries**: [`sql/athena_analytical_queries.sql`](file:///c:/Users/DELL/Downloads/serverless-etl-data-quality-pipeline/sql/athena_analytical_queries.sql):
+   - Total & monthly revenue aggregations.
+   - Top 10 products by revenue and units sold.
+   - Regional sales performance and market share percentages.
+   - Order cancellation rate by territory.
+   - Customer purchasing cohorts and lifetime value (LTV) segmentation.
+3. **Warehouse Partitioner**: [`src/athena_exporter.py`](file:///c:/Users/DELL/Downloads/serverless-etl-data-quality-pipeline/src/athena_exporter.py) partitions curated records into S3 `warehouse/fact_orders/year=YYYY/month=MM/` for Athena querying.
 
-### Part B: Data Warehouse (Star Schema on PostgreSQL)
-- **Schema DDL**: [`sql/schema.sql`](file:///c:/Users/DELL/Downloads/serverless-etl-data-quality-pipeline/sql/schema.sql) defining `dim_customer`, `dim_product`, `dim_date`, and `fact_orders` with PKs, FKs, and multi-column indexes.
-- **Connection Management**: [`src/db/connection.py`](file:///c:/Users/DELL/Downloads/serverless-etl-data-quality-pipeline/src/db/connection.py) with contextual transactions and automatic rollback.
-- **Idempotent Upsert Loader**: [`src/db/loader.py`](file:///c:/Users/DELL/Downloads/serverless-etl-data-quality-pipeline/src/db/loader.py) using `ON CONFLICT (order_id) DO UPDATE` to guarantee that duplicate re-ingestion does not create duplicate rows.
-- **Quality Isolation Guarantee**: Only records that passed all four validation rules enter the warehouse.
+### PART B: Interactive Streamlit Dashboard
+1. **Dashboard UI Application**: [`app.py`](file:///c:/Users/DELL/Downloads/serverless-etl-data-quality-pipeline/app.py) powered by Plotly and Streamlit.
+2. **Analytics Service**: [`src/analytics_service.py`](file:///c:/Users/DELL/Downloads/serverless-etl-data-quality-pipeline/src/analytics_service.py) executes queries against PostgreSQL (with SQLite fallback).
+3. **Core Dashboard Features**:
+   - **Executive KPIs**: Total revenue, orders, customers, cancellation rate %, average order value.
+   - **Revenue Analytics**: Interactive line and bar trends with date range filter and one-click CSV export.
+   - **Product Analytics**: Top 10 products and category revenue share pie chart.
+   - **Regional Analytics**: Territorial revenue bars and order volumes.
+   - **Data Quality Health**: Live metrics on pass rates, quarantined counts, rejection root-cause charts, and historical execution reports.
 
 ---
 
 ## 4. Test Suite & Verification
 
-All 13 automated tests across Phase 1, Phase 2, and Phase 3 passed:
+All **18 automated tests** across Phases 1, 2, 3, and 4 passed:
 
 ```powershell
 python -m unittest discover -s tests -p "test_*.py" -v
 ```
 
-Execute the Phase 3 pipeline end-to-end:
+### Launch Dashboard
 ```powershell
-python src/phase3_pipeline.py
+streamlit run app.py
 ```
+*(Runs at `http://localhost:8501`)*.
