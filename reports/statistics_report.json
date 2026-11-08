@@ -1,0 +1,226 @@
+{
+  "project": "Serverless ETL & Data Quality Pipeline - Phase 1",
+  "phase": "Phase 1 - Local Baseline & Quality Profiling",
+  "timestamp_utc": "2026-11-08T06:16:29.754131+00:00",
+  "summary": {
+    "raw_total_records": 10200,
+    "clean_total_records": 10200,
+    "raw_anomalies_detected": {
+      "duplicates": 142,
+      "missing_values": 300,
+      "invalid_amounts": 120,
+      "malformed_dates": 180
+    },
+    "clean_anomalies_detected": {
+      "duplicates": 0,
+      "missing_values": 0,
+      "invalid_amounts": 0,
+      "malformed_dates": 0
+    }
+  },
+  "raw_dataset_profile": {
+    "dataset_name": "raw_retail_transactions",
+    "generated_at_utc": "2026-11-08T06:16:29.725764+00:00",
+    "record_summary": {
+      "total_records": 10200,
+      "total_columns": 12,
+      "columns": [
+        "order_id",
+        "customer_id",
+        "product_id",
+        "product_name",
+        "category",
+        "quantity",
+        "unit_price",
+        "total_amount",
+        "order_date",
+        "region",
+        "payment_method",
+        "order_status"
+      ]
+    },
+    "data_quality_issues": {
+      "duplicate_records_count": 142,
+      "duplicate_order_ids": 150,
+      "missing_values_by_column": {
+        "order_id": 0,
+        "customer_id": 100,
+        "product_id": 0,
+        "product_name": 0,
+        "category": 0,
+        "quantity": 100,
+        "unit_price": 0,
+        "total_amount": 0,
+        "order_date": 0,
+        "region": 0,
+        "payment_method": 100,
+        "order_status": 0
+      },
+      "total_missing_values": 300,
+      "invalid_unit_prices_lte_zero": 40,
+      "invalid_total_amounts_lte_zero": 80,
+      "malformed_or_unparseable_dates": 180,
+      "amount_discrepancy_count": 120
+    },
+    "numeric_metrics": {
+      "quantity": {
+        "count_valid": 10100,
+        "min": 1.0,
+        "mean": 2.07,
+        "median": 2.0,
+        "max": 10.0,
+        "std": 1.62
+      },
+      "unit_price": {
+        "count_valid": 10200,
+        "min": -399.99,
+        "mean": 137.08,
+        "median": 89.5,
+        "max": 399.99,
+        "std": 112.87
+      },
+      "total_amount": {
+        "count_valid": 10200,
+        "min": -99.99,
+        "mean": 282.88,
+        "median": 170.0,
+        "max": 3999.9,
+        "std": 373.13
+      }
+    },
+    "categorical_distributions": {
+      "category": {
+        "Electronics": 2754,
+        "Apparel": 2101,
+        "Home & Kitchen": 2005,
+        "Beauty & Personal Care": 1383,
+        "Sports & Outdoors": 1268,
+        "Books": 689
+      },
+      "region": {
+        "North America": 4032,
+        "Europe": 2579,
+        "Asia-Pacific": 2056,
+        "Latin America": 1023,
+        "Middle East & Africa": 510
+      },
+      "payment_method": {
+        "Credit Card": 4545,
+        "Debit Card": 2041,
+        "PayPal": 1517,
+        "Apple Pay": 1025,
+        "Bank Transfer": 972,
+        "nan": 100
+      },
+      "order_status": {
+        "Delivered": 6066,
+        "Shipped": 1565,
+        "Processing": 1233,
+        "Cancelled": 831,
+        "Returned": 505
+      }
+    }
+  },
+  "clean_reference_dataset_profile": {
+    "dataset_name": "clean_reference_retail_transactions",
+    "generated_at_utc": "2026-11-08T06:16:29.754131+00:00",
+    "record_summary": {
+      "total_records": 10200,
+      "total_columns": 12,
+      "columns": [
+        "order_id",
+        "customer_id",
+        "product_id",
+        "product_name",
+        "category",
+        "quantity",
+        "unit_price",
+        "total_amount",
+        "order_date",
+        "region",
+        "payment_method",
+        "order_status"
+      ]
+    },
+    "data_quality_issues": {
+      "duplicate_records_count": 0,
+      "duplicate_order_ids": 0,
+      "missing_values_by_column": {
+        "order_id": 0,
+        "customer_id": 0,
+        "product_id": 0,
+        "product_name": 0,
+        "category": 0,
+        "quantity": 0,
+        "unit_price": 0,
+        "total_amount": 0,
+        "order_date": 0,
+        "region": 0,
+        "payment_method": 0,
+        "order_status": 0
+      },
+      "total_missing_values": 0,
+      "invalid_unit_prices_lte_zero": 0,
+      "invalid_total_amounts_lte_zero": 0,
+      "malformed_or_unparseable_dates": 0,
+      "amount_discrepancy_count": 0
+    },
+    "numeric_metrics": {
+      "quantity": {
+        "count_valid": 10200,
+        "min": 1.0,
+        "mean": 2.07,
+        "median": 2.0,
+        "max": 10.0,
+        "std": 1.62
+      },
+      "unit_price": {
+        "count_valid": 10200,
+        "min": 28.5,
+        "mean": 138.11,
+        "median": 89.5,
+        "max": 399.99,
+        "std": 111.45
+      },
+      "total_amount": {
+        "count_valid": 10200,
+        "min": 28.5,
+        "mean": 285.55,
+        "median": 170.0,
+        "max": 3999.9,
+        "std": 372.76
+      }
+    },
+    "categorical_distributions": {
+      "category": {
+        "Electronics": 2751,
+        "Apparel": 2090,
+        "Home & Kitchen": 2012,
+        "Beauty & Personal Care": 1384,
+        "Sports & Outdoors": 1268,
+        "Books": 695
+      },
+      "region": {
+        "North America": 4029,
+        "Europe": 2578,
+        "Asia-Pacific": 2058,
+        "Latin America": 1024,
+        "Middle East & Africa": 511
+      },
+      "payment_method": {
+        "Credit Card": 4597,
+        "Debit Card": 2056,
+        "PayPal": 1533,
+        "Apple Pay": 1026,
+        "Bank Transfer": 988
+      },
+      "order_status": {
+        "Delivered": 6067,
+        "Shipped": 1557,
+        "Processing": 1230,
+        "Cancelled": 841,
+        "Returned": 505
+      }
+    }
+  }
+}
