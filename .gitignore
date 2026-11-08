@@ -5,6 +5,9 @@ env/
 venv/
 ENV/
 
+# Local S3 emulator data
+.s3_emulator/
+
 # Python cache & artifacts
 __pycache__/
 *.py[cod]

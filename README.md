@@ -1,136 +1,109 @@
-# Serverless ETL & Data Quality Pipeline on AWS (Phase 1)
+# Serverless ETL & Data Quality Pipeline on AWS
 
-A production-grade, modular foundation for an enterprise retail transaction ETL and data quality pipeline.
-
-This repository implements **Phase 1: Local Baseline, Controlled Data Generation, Anomaly Injection, and Profiling Audit Engine**. AWS cloud services (S3, Lambda, Glue, Athena, Step Functions, CloudWatch) will be integrated in Phase 2.
+An enterprise data lake and serverless ETL pipeline built with **Python 3.12, Amazon S3, AWS Lambda, Pandas, CloudWatch, and IAM**.
 
 ---
 
-## 1. Architecture & Project Layout
+## 1. Architecture Overview
+
+```text
+[ Raw Data Ingestion ] ──────> [ S3 Bucket: raw/ ]
+                                        │
+                               (S3 ObjectCreated:Put)
+                                        ▼
+                             [ AWS Lambda ETL Worker ]
+                             ├── 1. Anti-Recursion Gate
+                             ├── 2. Extraction & In-Memory Read
+                             ├── 3. Schema Standardization
+                             ├── 4. Data Quality Rules & DQ Routing
+                             └── 5. Structured CloudWatch Logging
+                                        │
+                   ┌────────────────────┴────────────────────┐
+                   ▼                                         ▼
+       [ S3 Bucket: curated/ ]                   [ S3 Bucket: quarantine/ ]
+       (Clean, validated & casted)               (Rejected with audit reason)
+                   │
+                   ▼
+       [ S3 Bucket: reports/ ]
+       (Execution JSON telemetry)
+```
+
+---
+
+## 2. Directory Structure
 
 ```text
 serverless-etl-data-quality-pipeline/
-├── .env.example                     # Environment template (local & AWS staging)
-├── .gitignore                       # Git exclusion rules
-├── README.md                        # Project documentation & operational runbook
-├── requirements.txt                 # Pinned dependencies
+├── .env.example                     # Environment template (Local & AWS)
+├── .gitignore                       # Git exclusions
+├── HOW_TO_RUN.md                    # Detailed runbook & AWS setup guide
+├── README.md                        # Project documentation
+├── requirements.txt                 # Dependencies
 ├── data/
-│   ├── clean/                       # Clean reference baseline data
+│   ├── clean/                       # Reference clean dataset (10,200 rows)
 │   │   └── retail_transactions_clean.csv
-│   └── raw/                         # Raw retail data with controlled anomalies
+│   └── raw/                         # Raw dataset with anomalies (10,200 rows)
 │       └── retail_transactions.csv
+├── iam/
+│   ├── lambda_assume_role_policy.json # IAM Trust Policy
+│   ├── lambda_execution_policy.json   # Least-privilege Lambda Policy (S3 + CW)
+│   └── s3_bucket_policy.json          # S3 TLS & Encryption Enforcement
 ├── reports/
-│   └── statistics_report.json       # Generated data profiling & quality report
+│   └── statistics_report.json       # Phase 1 Data Exploration Report
 ├── src/
 │   ├── __init__.py
-│   ├── generator.py                 # Synthetic dataset generator & anomaly injector
-│   ├── explorer.py                  # Profiling, statistical exploration & DQ validator
-│   └── main.py                      # Orchestration entry point
+│   ├── explorer.py                  # Profiling & Exploration module
+│   ├── generator.py                 # Synthetic data & anomaly generator
+│   ├── lambda_function.py           # AWS Lambda Handler & ETL transformations
+│   ├── main.py                      # Phase 1 Orchestrator
+│   └── s3_client.py                 # S3 Manager (boto3 + offline emulator)
 └── tests/
-    └── test_pipeline.py             # Unit & integration tests
+    ├── test_phase2_e2e.py           # Phase 2 S3 -> Lambda -> S3 E2E test
+    ├── test_phase2_unit.py          # Phase 2 unit & anti-recursion tests
+    └── test_pipeline.py             # Phase 1 pipeline tests
 ```
 
 ---
 
-## 2. Dataset Schema (12 Fields)
+## 3. Data Lake Prefix Structure
 
-Both the raw and clean datasets contain **exactly 10,200 records** conforming to this schema:
-
-| Column | Data Type | Description | Example |
-| :--- | :--- | :--- | :--- |
-| `order_id` | String | Unique transaction identifier | `ORD-0000001` |
-| `customer_id` | String | Customer identity key | `CUST-01245` |
-| `product_id` | String | Product SKU | `PRD-ELC-001` |
-| `product_name` | String | Commercial product title | `Ultra HD 4K Monitor 27-inch` |
-| `category` | String | Product category | `Electronics` |
-| `quantity` | Integer | Items purchased | `2` |
-| `unit_price` | Float | Unit price in USD | `329.99` |
-| `total_amount` | Float | Total transaction amount | `659.98` |
-| `order_date` | String / DateTime | ISO Timestamp of order | `2025-06-14 18:22:10` |
-| `region` | String | Customer geographical region | `North America` |
-| `payment_method` | String | Payment method used | `Credit Card` |
-| `order_status` | String | Fulfillment lifecycle state | `Delivered` |
+The S3 bucket enforces a partitioned five-tier storage lake:
+1. `raw/`: Unprocessed batch and streaming ingestion drops.
+2. `curated/`: Cleaned, schema-standardized, validated records ready for consumption.
+3. `warehouse/`: Parquet-compacted analytical partitions for Athena/Glue.
+4. `quarantine/`: Failed records with tagged `rejection_reasons`.
+5. `reports/`: Audit logs, profiling summaries, and execution metrics.
 
 ---
 
-## 3. Controlled Data Quality Anomalies (Injected in Raw Dataset)
+## 4. Key Engineering Implementations in Phase 2
 
-To simulate real-world streaming/batch ingestion issues that the Phase 2 AWS serverless pipeline will validate and remediate:
-1. **Duplicates**: 150 injected records (142 complete row duplicates, 150 duplicate order IDs).
-2. **Missing Fields (Null / NaN)**: Exactly 300 missing values distributed evenly across `customer_id` (100), `payment_method` (100), and `quantity` (100).
-3. **Invalid Amounts**: 120 faulty amounts, including negative unit prices (`-$X`), zero totals (`$0.00`), and negative totals (`-$99.99`).
-4. **Malformed Dates**: 180 unparseable date strings (e.g., `INVALID_DATE_STRING`, `2025/31/12 25:99:99`, `31-02-2025`, `9999-99-99`).
+### 4.1 Anti-Recursion Trigger Safeguard
+Recursive S3-Lambda triggering occurs when an ETL Lambda writes back to the same prefix it listens to.
+- **S3 Level**: Notification filter is strictly configured with prefix `raw/` and suffix `.csv`.
+- **Lambda Code Level**: [`src/lambda_function.py`](file:///c:/Users/DELL/Downloads/serverless-etl-data-quality-pipeline/src/lambda_function.py) enforces a zero-trust guard that rejects keys outside `raw/` and drops events belonging to `curated/`, `warehouse/`, `quarantine/`, or `reports/`.
 
-The **clean reference dataset** maintains zero nulls, zero duplicates, and strictly valid calculations.
+### 4.2 Standardizations & Data Quality Rules
+- Lowercased and stripped whitespace in column headers.
+- Formatted timestamps to standard ISO `YYYY-MM-DD HH:MM:SS`.
+- Cast quantities and prices to standard `int` and `round(float, 2)`.
+- Records with missing IDs, negative amounts, or malformed dates are routed to `quarantine/` with explicit root-cause tags (`MISSING_CUSTOMER_ID`, `INVALID_UNIT_PRICE`, `MALFORMED_DATE`, etc.).
 
----
-
-## 4. Windows Installation & Setup Guide
-
-### Prerequisites
-- Python 3.12 (e.g. `C:\Python312\python.exe` or installed in `PATH`)
-- Windows PowerShell or Command Prompt
-
-### Step 1: Open PowerShell in Project Directory
-```powershell
-cd C:\Users\DELL\Downloads\serverless-etl-data-quality-pipeline
-```
-
-### Step 2: (Optional) Create and Activate Virtual Environment
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-```
-
-> **Note**: If your system has multiple Python versions or alias redirection issues with Windows Store `python.exe`, use your direct Python 3.12 binary path (e.g. `C:\Python312\python.exe`).
-
-### Step 3: Install Dependencies
-```powershell
-pip install -r requirements.txt
-```
-
-### Step 4: Configure Environment Variables
-```powershell
-Copy-Item .env.example .env
-```
+### 4.3 Structured CloudWatch Logging
+All Lambda invocations produce JSON log lines containing execution telemetry (`event_type`, `metrics`, `rejection_summary`), queryable in **CloudWatch Logs Insights**.
 
 ---
 
-## 5. Execution Commands
+## 5. Quick Start (Windows)
 
-### Run Full Phase 1 Pipeline (Data Generation + Profiling)
-```powershell
-python src/main.py
-```
-*(Or specify custom parameters)*:
-```powershell
-python src/main.py --records 10200 --seed 42 --raw-path data/raw/retail_transactions.csv --clean-path data/clean/retail_transactions_clean.csv --report-path reports/statistics_report.json
-```
+Detailed step-by-step instructions with AWS Console click-paths are in [`HOW_TO_RUN.md`](file:///c:/Users/DELL/Downloads/serverless-etl-data-quality-pipeline/HOW_TO_RUN.md).
 
-### Run Generator Module Standalone
-```powershell
-python src/generator.py
-```
-
-### Run Profiler & Report Generator Standalone
-```powershell
-python src/explorer.py
-```
-
-### Run Test Suite
+### Run Test Suite (7/7 Tests Passed)
 ```powershell
 python -m unittest discover -s tests -p "test_*.py" -v
 ```
-*(Or with pytest once installed)*:
+
+### Run Phase 2 End-to-End Simulation
 ```powershell
-pytest -v
+python tests/test_phase2_e2e.py
 ```
-
----
-
-## 6. Phase 1 Verification Results
-
-- **Raw Data Path**: [`data/raw/retail_transactions.csv`](file:///c:/Users/DELL/Downloads/serverless-etl-data-quality-pipeline/data/raw/retail_transactions.csv) (10,200 rows)
-- **Clean Data Path**: [`data/clean/retail_transactions_clean.csv`](file:///c:/Users/DELL/Downloads/serverless-etl-data-quality-pipeline/data/clean/retail_transactions_clean.csv) (10,200 rows)
-- **Quality Audit Report**: [`reports/statistics_report.json`](file:///c:/Users/DELL/Downloads/serverless-etl-data-quality-pipeline/reports/statistics_report.json)
-- **Test Suite Status**: 3/3 Tests Passed.
